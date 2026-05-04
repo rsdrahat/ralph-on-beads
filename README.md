@@ -19,6 +19,10 @@
 
 > **🧪 Experimental** — This workflow is actively tested on real projects. Smaller, verified tasks trade higher Claude Code usage for more reliable outcomes. Your mileage may vary—I'd love feedback on what works and what doesn't.
 
+> **🔱 Fork notice** — This is `rsdrahat/ralph-on-beads`, a fork of [`mj-meyer/choo-choo-ralph`](https://github.com/mj-meyer/choo-choo-ralph). Differences from upstream:
+> - **Worktree-per-iteration isolation** — every iteration of `ralph.sh` runs Claude inside a fresh git worktree on a `ralph/<iter-id>` branch, then fast-forwards back on success. Concurrent Ralphs can't stomp each other's edits. ([details](#worktree-isolation))
+> - **Roadmap** — additional gastown-inspired enhancements (subagent-typed steps, parallel siblings, batch-then-bisect refinery merge queue, FIX_NEEDED handoff) are queued as `P3` issues in this fork's `.beads/`.
+
 ---
 
 ## What is Choo Choo Ralph?
@@ -77,11 +81,11 @@ By using this project, you accept full responsibility for any consequences.
 
 </details>
 
-**Prerequisites:** [Claude Code](https://claude.com/claude-code), [Beads](https://github.com/steveyegge/beads) (`bd` command), [jq](https://jqlang.github.io/jq/)
+**Prerequisites:** [Claude Code](https://claude.com/claude-code), [Beads](https://github.com/steveyegge/beads) (`bd` command), [jq](https://jqlang.github.io/jq/), git ≥ 2.5 (for worktree support)
 
 ```bash
-# Install plugin
-/plugin marketplace add mj-meyer/choo-choo-ralph
+# Install plugin (this fork)
+/plugin marketplace add rsdrahat/ralph-on-beads
 /plugin install choo-choo-ralph@choo-choo-ralph
 
 # Set up project
@@ -93,11 +97,17 @@ By using this project, you accept full responsibility for any consequences.
 # Review the spec, then pour into beads
 /choo-choo-ralph:pour
 
-# Start the loop
+# Start the loop (each iteration runs in an isolated worktree by default)
 ./ralph.sh
+
+# Or, to disable isolation and run claude in the main worktree (legacy behavior)
+./ralph.sh --no-isolate
+
+# Or, to leave merge-back to a refinery (when issue ralph-on-beads-k03 lands)
+RALPH_AUTO_MERGE=0 ./ralph.sh
 ```
 
-For the complete workflow, see [docs/workflow.md](docs/workflow.md).
+For the complete workflow, see [docs/workflow.md](docs/workflow.md). For the new isolation model, see [Worktree isolation](#worktree-isolation) below.
 
 ---
 
@@ -130,6 +140,45 @@ Choo Choo Ralph requires [Beads](https://github.com/steveyegge/beads). Here's wh
 
 > [!IMPORTANT]
 > Beads is a **hard requirement**. The plugin's pour and formula system depends on Beads' molecule feature to create multi-step workflows.
+
+---
+
+## Worktree isolation
+
+This fork wraps every iteration of `ralph.sh` (and `ralph-once.sh`) in a per-iteration git worktree so that concurrent Ralphs cannot stomp each other's edits — file-level isolation, in addition to the bead-claim-level isolation that upstream already provides.
+
+**What happens per iteration:**
+
+1. The script captures your current branch as `BASE_BRANCH`.
+2. It creates a fresh worktree at `.ralph-worktrees/<iter-id>/` on a new branch `ralph/<iter-id>` based on `HEAD`.
+3. It symlinks the repo's `.beads/` into the worktree so `bd` commands inside Claude write to one shared dolt db.
+4. Claude runs with cwd inside the worktree. Commits land on `ralph/<iter-id>`.
+5. After Claude exits, the script:
+   - Detects uncommitted changes → leaves the worktree for inspection.
+   - Detects no new commits → prunes worktree and branch.
+   - Otherwise → tries `git merge --ff-only ralph/<iter-id>` into `BASE_BRANCH`. On success, removes worktree + branch. On failure (parallel Ralph already advanced `BASE_BRANCH`), leaves the branch + worktree for manual merge or for the future refinery (`ralph-on-beads-k03`).
+
+**Flags & env:**
+
+| Flag / env | Effect |
+|---|---|
+| `--no-isolate` | Skip worktrees entirely. Claude runs in the main worktree, like upstream. |
+| `RALPH_AUTO_MERGE=0` | Skip the fast-forward merge-back. Branches accumulate for refinery. |
+| `RALPH_WORKTREE_ROOT=...` | Override the worktree directory (default: `<repo>/.ralph-worktrees/`). |
+
+**Git ≥ 2.5 required.** The install command adds `.ralph-worktrees/` to your `.gitignore`.
+
+If a worktree is left behind after a failed merge, you can inspect it normally:
+
+```bash
+cd .ralph-worktrees/<iter-id>
+git log
+git diff <base-branch>
+# When you're done:
+cd -
+git worktree remove .ralph-worktrees/<iter-id>
+git branch -D ralph/<iter-id>
+```
 
 ---
 

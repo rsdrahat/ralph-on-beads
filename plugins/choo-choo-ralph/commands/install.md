@@ -58,7 +58,15 @@ Use Bash `cp` commands for fast file copying (NOT Read/Write tools).
    mkdir -p .choo-choo-ralph
    ```
 
-4. **Verify installation**:
+4. **Add worktree dir to .gitignore**:
+   Append `.ralph-worktrees/` to `.gitignore` if not already present. Ralph
+   creates per-iteration git worktrees there for isolation when running in
+   parallel; they should never be committed.
+   ```bash
+   grep -qxF '.ralph-worktrees/' .gitignore 2>/dev/null || echo '.ralph-worktrees/' >> .gitignore
+   ```
+
+5. **Verify installation**:
    - Confirm all files exist
    - Run `bd formula list` to verify both formulas are registered (choo-choo-ralph and bug-fix)
 
@@ -76,6 +84,11 @@ Report what was installed (and what was skipped if applicable):
 - Scripts: ralph.sh, ralph-once.sh, ralph-format.sh
 - Formulas: .beads/formulas/choo-choo-ralph.formula.toml, .beads/formulas/bug-fix.formula.toml
 - Spec directory: .choo-choo-ralph/
+- Worktree dir: `.ralph-worktrees/` (gitignored; auto-managed per iteration)
+
+Note: Each iteration of `ralph.sh` runs in an isolated git worktree on a
+`ralph/<iter-id>` branch, then fast-forward-merges back on success. Pass
+`--no-isolate` or set `RALPH_AUTO_MERGE=0` to change this behavior.
 
 Explain next steps:
 
