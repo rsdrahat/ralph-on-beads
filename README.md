@@ -100,10 +100,16 @@ By using this project, you accept full responsibility for any consequences.
 # Start the loop (each iteration runs in an isolated worktree by default)
 ./ralph.sh
 
-# Or, to disable isolation and run claude in the main worktree (legacy behavior)
+# Drive bare beads (created via `bd create`, not /choo-choo-ralph:pour)
+./ralph.sh --assignee=any
+
+# Drive a custom queue (e.g., your own assignee)
+./ralph.sh --assignee=mybacklog
+
+# Disable isolation and run claude in the main worktree (legacy behavior)
 ./ralph.sh --no-isolate
 
-# Or, to leave merge-back to a refinery (when issue ralph-on-beads-k03 lands)
+# Leave merge-back to a refinery (when issue ralph-on-beads-k03 lands)
 RALPH_AUTO_MERGE=0 ./ralph.sh
 ```
 
@@ -163,6 +169,7 @@ This fork wraps every iteration of `ralph.sh` (and `ralph-once.sh`) in a per-ite
 | Flag / env | Effect |
 |---|---|
 | `--no-isolate` | Skip worktrees entirely. Claude runs in the main worktree, like upstream. |
+| `--assignee=<name>` / `RALPH_ASSIGNEE=<name>` | Filter the ready queue by this assignee (default: `ralph`). Use `any` to drop the filter — picks from all ready beads, including bare ones created via `bd create`. |
 | `RALPH_AUTO_MERGE=0` | Skip the fast-forward merge-back. Branches accumulate for refinery. |
 | `RALPH_WORKTREE_ROOT=...` | Override the worktree directory (default: `<repo>/.ralph-worktrees/`). |
 

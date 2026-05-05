@@ -2,7 +2,7 @@
 set -e
 
 # Ralph on Beads - Autonomous coding loop with per-iteration worktrees
-# Usage: ./ralph.sh [max_iterations] [--verbose|-v] [--no-isolate]
+# Usage: ./ralph.sh [max_iterations] [--verbose|-v] [--no-isolate] [--assignee=<name>|any]
 #
 # Each iteration runs Claude inside a fresh git worktree on a per-iteration
 # branch (ralph/<iter-id>). On clean exit with new commits, the branch is
@@ -10,18 +10,27 @@ set -e
 # fast-forward failure (e.g. another Ralph already advanced the base branch),
 # the worktree+branch are left in place for manual merge or refinery.
 #
+# Assignee filtering:
+#   Default is `ralph` (the assignee that /choo-choo-ralph:pour stamps onto
+#   molecule-poured beads). Pass `--assignee=any` (or set RALPH_ASSIGNEE=any)
+#   to drop the filter entirely — useful when you want Ralph to chew on bare
+#   beads created by `bd create` rather than only molecule-poured work.
+#
 # Environment overrides:
+#   RALPH_ASSIGNEE        Assignee to filter on; "any" / "" disables filter
 #   RALPH_AUTO_MERGE=0    Skip merge-back; leave branches for refinery
 #   RALPH_WORKTREE_ROOT   Override worktree dir (default: <repo>/.ralph-worktrees)
 
 MAX_ITERATIONS=100
 VERBOSE_FLAG=""
 ISOLATE=1
+RALPH_ASSIGNEE="${RALPH_ASSIGNEE:-ralph}"
 
 for arg in "$@"; do
   case "$arg" in
   --verbose | -v) VERBOSE_FLAG="--verbose" ;;
   --no-isolate)   ISOLATE=0 ;;
+  --assignee=*)   RALPH_ASSIGNEE="${arg#--assignee=}" ;;
   [0-9]*)         MAX_ITERATIONS="$arg" ;;
   esac
 done
@@ -31,23 +40,37 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 WORKTREE_ROOT="${RALPH_WORKTREE_ROOT:-$REPO_ROOT/.ralph-worktrees}"
 AUTO_MERGE="${RALPH_AUTO_MERGE:-1}"
 
+# Build the assignee filter. "any" or empty disables it (Ralph will pull from
+# the full ready queue regardless of who the bead is assigned to).
+if [ "$RALPH_ASSIGNEE" = "any" ] || [ -z "$RALPH_ASSIGNEE" ]; then
+  BD_FILTER=""
+  READY_CMD="bd ready -n 100 --sort=priority"
+  IN_PROGRESS_CMD="bd list --status=in_progress"
+  ASSIGNEE_LABEL="any"
+else
+  BD_FILTER="--assignee=$RALPH_ASSIGNEE"
+  READY_CMD="bd ready --assignee=$RALPH_ASSIGNEE -n 100 --sort=priority"
+  IN_PROGRESS_CMD="bd list --status=in_progress --assignee=$RALPH_ASSIGNEE"
+  ASSIGNEE_LABEL="$RALPH_ASSIGNEE"
+fi
+
 iteration=0
 
-echo "Starting Ralph loop (max $MAX_ITERATIONS iterations, isolate=$ISOLATE)"
+echo "Starting Ralph loop (max $MAX_ITERATIONS iterations, isolate=$ISOLATE, assignee=$ASSIGNEE_LABEL)"
 
 PROMPT_BODY="
-Run \`bd ready --assignee=ralph -n 100 --sort=priority\` to see available tasks.
+Run \`$READY_CMD\` to see available tasks.
 
-Also run \`bd list --status=in_progress --assignee=ralph\` to see what tasks other Ralph agents are currently working on.
+Also run \`$IN_PROGRESS_CMD\` to see what other agents are currently working on.
 
 Decide which task to work on next. Selection criteria:
 1. Priority - higher priority tasks are more important
-2. Avoid conflicts - if other Ralph agents have tasks in_progress, you MUST pick a completely different epic. Do NOT work on any task that is a child, parent, or sibling of an in-progress task. Stay away from the entire epic tree that another Ralph is working on.
-3. If all high-priority epics are being worked on by other Ralphs, pick a lower-priority epic that is completely unrelated
+2. Avoid conflicts - if other agents have tasks in_progress, you MUST pick a completely different epic. Do NOT work on any task that is a child, parent, or sibling of an in-progress task. Stay away from the entire epic tree that another agent is working on.
+3. If all high-priority epics are being worked on, pick a lower-priority epic that is completely unrelated
 
 Pick ONE task, claim it with \`bd update <id> --status in_progress\`, then execute it according to its description.
 
-One iteration = complete the task AND all its child tasks (if any).
+One iteration = complete the task AND all its child tasks (if any). If the bead has no children (i.e. it's a bare \`bd create\` bead, not a molecule-poured one), just execute its description directly.
 
 Commit your work to the current branch as you go. The outer ralph.sh loop manages worktree creation and merge-back; you do not need to create or switch branches.
 
@@ -65,7 +88,7 @@ while [ $iteration -lt $MAX_ITERATIONS ]; do
   echo "=== Iteration $((iteration + 1)) ==="
   echo "---"
 
-  available=$(bd ready --assignee=ralph -n 100 --json 2>/dev/null | jq -r 'length')
+  available=$(bd ready $BD_FILTER -n 100 --json 2>/dev/null | jq -r 'length')
 
   if [ "$available" -eq 0 ]; then
     echo "No ready work available. Done."

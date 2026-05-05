@@ -2,26 +2,49 @@
 set -e
 
 # Ralph on Beads - Single interactive iteration in an isolated worktree
-# Usage: ./ralph-once.sh [--no-isolate]
+# Usage: ./ralph-once.sh [--no-isolate] [--assignee=<name>|any]
 #
 # Creates a per-iteration git worktree on a fresh branch (ralph/<iter-id>),
 # runs Claude interactively inside it, then attempts an --ff-only merge back
 # to the base branch on clean exit.
 #
+# Assignee filtering:
+#   Default is `ralph`. Pass `--assignee=any` (or set RALPH_ASSIGNEE=any) to
+#   drop the filter and pick from all ready beads — useful for bare beads
+#   created via `bd create` rather than molecule-poured work.
+#
 # Environment overrides:
+#   RALPH_ASSIGNEE        Assignee to filter on; "any" / "" disables filter
 #   RALPH_AUTO_MERGE=0    Skip merge-back; leave the branch for refinery
 #   RALPH_WORKTREE_ROOT   Override worktree dir (default: <repo>/.ralph-worktrees)
 
 ISOLATE=1
-[[ "$1" == "--no-isolate" ]] && ISOLATE=0
+RALPH_ASSIGNEE="${RALPH_ASSIGNEE:-ralph}"
+
+for arg in "$@"; do
+  case "$arg" in
+  --no-isolate) ISOLATE=0 ;;
+  --assignee=*) RALPH_ASSIGNEE="${arg#--assignee=}" ;;
+  esac
+done
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 WORKTREE_ROOT="${RALPH_WORKTREE_ROOT:-$REPO_ROOT/.ralph-worktrees}"
 AUTO_MERGE="${RALPH_AUTO_MERGE:-1}"
 
-echo "=== Ralph Single Iteration (isolate=$ISOLATE) ==="
+if [ "$RALPH_ASSIGNEE" = "any" ] || [ -z "$RALPH_ASSIGNEE" ]; then
+  BD_FILTER=""
+  READY_CMD="bd ready -n 100 --sort=priority"
+  ASSIGNEE_LABEL="any"
+else
+  BD_FILTER="--assignee=$RALPH_ASSIGNEE"
+  READY_CMD="bd ready --assignee=$RALPH_ASSIGNEE -n 100 --sort=priority"
+  ASSIGNEE_LABEL="$RALPH_ASSIGNEE"
+fi
 
-available=$(bd ready --assignee=ralph -n 100 --json 2>/dev/null | jq -r 'length')
+echo "=== Ralph Single Iteration (isolate=$ISOLATE, assignee=$ASSIGNEE_LABEL) ==="
+
+available=$(bd ready $BD_FILTER -n 100 --json 2>/dev/null | jq -r 'length')
 
 if [ "$available" -eq 0 ]; then
   echo "No open work available."
@@ -32,13 +55,13 @@ echo "$available open task(s) available"
 echo ""
 
 PROMPT="
-Run \`bd ready --assignee=ralph -n 100 --sort=priority\` to see available tasks.
+Run \`$READY_CMD\` to see available tasks.
 
 Decide which task to work on next. This should be the one YOU decide has the highest priority - not necessarily the first in the list.
 
 Pick ONE task, claim it with \`bd update <id> --status in_progress\`, then execute it according to its description.
 
-One iteration = complete the task AND all its child tasks (if any).
+One iteration = complete the task AND all its child tasks (if any). If the bead has no children (i.e. it's a bare \`bd create\` bead, not a molecule-poured one), just execute its description directly.
 
 Commit your work to the current branch as you go. The outer ralph-once.sh script manages worktree creation and merge-back; you do not need to create or switch branches.
 
