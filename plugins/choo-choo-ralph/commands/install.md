@@ -25,6 +25,7 @@ Before installing, check which files already exist:
 - `./ralph.sh`
 - `./ralph-once.sh`
 - `./ralph-format.sh`
+- `./ralph-promote.sh`
 - `.beads/formulas/choo-choo-ralph.formula.toml`
 - `.beads/formulas/bug-fix.formula.toml`
 
@@ -43,7 +44,8 @@ Use Bash `cp` commands for fast file copying (NOT Read/Write tools).
    cp "${CLAUDE_PLUGIN_ROOT}/templates/ralph.sh" ./ralph.sh
    cp "${CLAUDE_PLUGIN_ROOT}/templates/ralph-once.sh" ./ralph-once.sh
    cp "${CLAUDE_PLUGIN_ROOT}/templates/ralph-format.sh" ./ralph-format.sh
-   chmod +x ralph.sh ralph-once.sh ralph-format.sh
+   cp "${CLAUDE_PLUGIN_ROOT}/templates/ralph-promote.sh" ./ralph-promote.sh
+   chmod +x ralph.sh ralph-once.sh ralph-format.sh ralph-promote.sh
    ```
 
 2. **Set up formulas directory**:
@@ -81,7 +83,7 @@ Use Bash `cp` commands for fast file copying (NOT Read/Write tools).
 
 Report what was installed (and what was skipped if applicable):
 
-- Scripts: ralph.sh, ralph-once.sh, ralph-format.sh
+- Scripts: ralph.sh, ralph-once.sh, ralph-format.sh, ralph-promote.sh
 - Formulas: .beads/formulas/choo-choo-ralph.formula.toml, .beads/formulas/bug-fix.formula.toml
 - Spec directory: .choo-choo-ralph/
 - Worktree dir: `.ralph-worktrees/` (gitignored; auto-managed per iteration)
@@ -89,6 +91,11 @@ Report what was installed (and what was skipped if applicable):
 Note: Each iteration of `ralph.sh` runs in an isolated git worktree on a
 `ralph/<iter-id>` branch, then fast-forward-merges back on success. Pass
 `--no-isolate` or set `RALPH_AUTO_MERGE=0` to change this behavior.
+
+To drive bare `bd create` beads through the full Bearings → Implement →
+Verify → Commit structure, run with
+`./ralph.sh --auto-promote=choo-choo-ralph` (or `=bug-fix`). Atomic beads
+are auto-poured into a fresh molecule before Claude is invoked.
 
 Explain next steps:
 

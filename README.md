@@ -21,6 +21,7 @@
 
 > **🔱 Fork notice** — This is `rsdrahat/ralph-on-beads`, a fork of [`mj-meyer/choo-choo-ralph`](https://github.com/mj-meyer/choo-choo-ralph). Differences from upstream:
 > - **Worktree-per-iteration isolation** — every iteration of `ralph.sh` runs Claude inside a fresh git worktree on a `ralph/<iter-id>` branch, then fast-forwards back on success. Concurrent Ralphs can't stomp each other's edits. ([details](#worktree-isolation))
+> - **Auto-promote atomic beads into molecules** — `--auto-promote=choo-choo-ralph` (or `=bug-fix`) makes Ralph pour any atomic `bd create` bead into a structured molecule before invoking Claude. One canonical workflow for both spec-poured and bare beads. ([details](#auto-promote))
 > - **Roadmap** — additional gastown-inspired enhancements (subagent-typed steps, parallel siblings, batch-then-bisect refinery merge queue, FIX_NEEDED handoff) are queued as `P3` issues in this fork's `.beads/`.
 
 ---
@@ -100,11 +101,19 @@ By using this project, you accept full responsibility for any consequences.
 # Start the loop (each iteration runs in an isolated worktree by default)
 ./ralph.sh
 
-# Drive bare beads (created via `bd create`, not /choo-choo-ralph:pour)
+# RECOMMENDED for bare `bd create` beads: auto-promote to the full molecule
+# structure before invoking Claude, so every bead gets Bearings → Implement
+# → Verify → Commit phases. Works for both ralph-assigned molecules and
+# bare beads — molecules pass through unchanged; atomic beads get poured.
+./ralph.sh --auto-promote=choo-choo-ralph
+# Or with the lighter formula:
+./ralph.sh --auto-promote=bug-fix
+
+# Drive bare beads without promotion (atomic execution; less rigor)
 ./ralph.sh --assignee=any
 
 # Drive a custom queue (e.g., your own assignee)
-./ralph.sh --assignee=mybacklog
+./ralph.sh --assignee=mybacklog --auto-promote=choo-choo-ralph
 
 # Disable isolation and run claude in the main worktree (legacy behavior)
 ./ralph.sh --no-isolate
@@ -170,8 +179,40 @@ This fork wraps every iteration of `ralph.sh` (and `ralph-once.sh`) in a per-ite
 |---|---|
 | `--no-isolate` | Skip worktrees entirely. Claude runs in the main worktree, like upstream. |
 | `--assignee=<name>` / `RALPH_ASSIGNEE=<name>` | Filter the ready queue by this assignee (default: `ralph`). Use `any` to drop the filter — picks from all ready beads, including bare ones created via `bd create`. |
+| `--auto-promote=<formula>` / `RALPH_AUTO_PROMOTE=<formula>` | Auto-pour atomic beads into a structured molecule before invoking Claude. See [Auto-promote](#auto-promote). |
 | `RALPH_AUTO_MERGE=0` | Skip the fast-forward merge-back. Branches accumulate for refinery. |
 | `RALPH_WORKTREE_ROOT=...` | Override the worktree directory (default: `<repo>/.ralph-worktrees/`). |
+
+---
+
+## Auto-promote
+
+Ralph's molecule formula gives you a structured Bearings → Implement → Verify → Commit pipeline with verification gates and learning capture. Upstream that requires running `/choo-choo-ralph:spec` and `/choo-choo-ralph:pour` ahead of time. This fork lets you skip the spec/pour ceremony for one-off work: any **atomic** bead (created with `bd create`, no children) gets auto-poured into a fresh molecule before Claude is invoked.
+
+```bash
+# Workflow A: bare beads, full structure
+bd create --title="Cache the user lookup" --description="In src/users/lookup.ts, add an LRU cache around fetchUserById with a 60s TTL. Add a unit test." --priority=2 --assignee=ralph
+./ralph.sh --auto-promote=choo-choo-ralph
+# Ralph picks the bead → sees it's atomic → pours a 5-issue molecule
+# (root + bearings + implement + verify + commit) → closes the original
+# with reason "auto-promoted to molecule …" → Claude runs the orchestrator
+# loop on the new molecule.
+
+# Workflow B: still works for already-poured molecules
+/choo-choo-ralph:spec plans/big-feature.md
+/choo-choo-ralph:pour
+./ralph.sh --auto-promote=choo-choo-ralph
+# Existing molecules pass through unchanged; only atomic beads get promoted.
+```
+
+**Choosing a formula:**
+- `choo-choo-ralph` — full structure (bearings + implement + verify + commit). Best for substantive changes.
+- `bug-fix` — lighter formula for targeted fixes. Use when you want some structure but not the full pipeline.
+- Any other formula listed by `bd formula list` is fair game.
+
+**Mechanics:** when bash detects an atomic bead, it shells out to `ralph-promote.sh <bead-id> <formula> <assignee>`, which runs `bd mol pour` with the bead's title and description as the `title` / `task` template variables. The original bead is closed with a reason linking to the new molecule's root id, so the audit trail stays intact. Existing molecule beads (any bead with children) skip promotion and pass straight through.
+
+**Tradeoff:** every atomic bead becomes a 5-issue molecule and a multi-phase Claude run. Worth it for substantive work; overkill for "rename this variable" type fixes — for those, just run without `--auto-promote`.
 
 **Git ≥ 2.5 required.** The install command adds `.ralph-worktrees/` to your `.gitignore`.
 
